@@ -3385,6 +3385,44 @@ let syncTests = {
     await onDisposePromise
     assert.strictEqual(onDisposeWasCalled, true)
   },
+
+  async pluginWithGlobEntrypoint({ esbuild, testDir }) {
+    const input = path.join(testDir, 'in.json5');
+    const outdir = path.join(testDir, 'dist');
+    await writeFileAsync(input, `{ "hello": "world" }`)
+    await esbuild.build({
+      entryPoints: [path.join(testDir, '*.json5')],
+      bundle: true,
+      outdir,
+      format: 'esm',
+      outExtension: { '.js': '.mjs' },
+      plugins: [
+        {
+          name: 'json5',
+          setup(build) {
+            build.onResolve({ filter: /\.json5$/ }, args => {
+              if (args.resolveDir === '') {
+                return;
+              }
+              return {
+                path: path.isAbsolute(args.path) ? args.path : path.join(args.resolveDir, args.path),
+                namespace: 'json5',
+              };
+            });
+
+            build.onLoad({ filter: /.*/, namespace: 'json5' }, async args => {
+              return {
+                contents: await readFileAsync(args.path),
+                loader: 'json',
+              };
+            });
+          },
+        }
+      ],
+    });
+    const result = await import(path.join(outdir, 'in.mjs'));
+    assert.deepEqual(result.default, { "hello": "world" });
+  },
 }
 
 async function main() {
